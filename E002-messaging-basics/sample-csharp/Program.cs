@@ -64,14 +64,14 @@ namespace E002
             ");
 
             // creating a new message to hold the arguments of "5 candles" to be addded to the basket
-            var message = new AddProductToBasketMessage("candles",5);
+            var message = new AddProductToBasketMessage("candles", 5);
 
             Print(@"Now, since we created that message, we will apply its item contents of:
             '" + message + "'" + @" 
 
             by sending it to the product basket to be handled.");
 
-            ApplyMessage(basket, message);
+            basket.Apply(message);
 
 
             Print(@"
@@ -103,9 +103,9 @@ namespace E002
             queue to the ProductBasket:
             ");
 
-            while(queue.Count>0)
+            while (queue.Count > 0)
             {
-                ApplyMessage(basket, queue.Dequeue());
+                basket.Apply(queue.Dequeue());
             }
 
             Print(@"
@@ -148,7 +148,7 @@ namespace E002
             Print(@"
             Let's see how this 'rosmary' message object would look in its binary form:
             ");
-            Console.WriteLine(BitConverter.ToString(bytes).Replace("-",""));
+            Console.WriteLine(BitConverter.ToString(bytes).Replace("-", ""));
             Print(@"
             And if we tried to open it in a text editor...
             ");
@@ -179,7 +179,7 @@ namespace E002
                 Print("[Serialized Message was read from disk:] " + readMessage);
                 Print(@"Now let's apply that messaage to the product basket.
                 ");
-                ApplyMessage(basket, readMessage);
+                basket.Apply(readMessage);
             }
 
             Print(@"
@@ -202,6 +202,13 @@ namespace E002
                 Console.WriteLine("  {0}: {1}", total.Key, total.Value);
             }
 
+            basket.Apply(new RemoveProductFromBasketMessage("butter", 1));
+
+            foreach (var total in basket.GetProductTotals())
+            {
+                Console.WriteLine("  {0}: {1}", total.Key, total.Value);
+            }
+
             Print(@"
             And that is the basics of messaging!
 
@@ -217,23 +224,14 @@ namespace E002
             ");
         }
 
-        static void ApplyMessage(ProductBasket basket, object message)
-        {
-            // this code accepts the message and actually adds the product to the supplied basket.
-            // we cast both basket and message to dynamic in order
-            // to dispatch it dynamically to one of "ProductBasket.When(...)" methods,
-            // which specifically can handle this type of the message
-            ((dynamic) basket).When((dynamic)message);
-        }
-
         static void Print(string message)
         {
             // just printing messages nicely
             // and without spaces in the beginning
             var oldColor = Console.ForegroundColor;
-            foreach (var line in message.Split(new[] { Environment.NewLine },StringSplitOptions.None))
+            foreach (var line in message.Split(new[] { Environment.NewLine }, StringSplitOptions.None))
             {
-             
+
 
                 var trimmed = line.TrimStart();
 
@@ -249,23 +247,20 @@ namespace E002
                 {
                     Console.ForegroundColor = ConsoleColor.DarkGreen;
                 }
-                
+
                 Console.WriteLine(trimmed);
             }
             Console.ForegroundColor = oldColor;
         }
 
-        
-
-
         public class ProductBasket
         {
-            readonly IDictionary<string, double> _products = new Dictionary<string, double>(); 
+            readonly IDictionary<string, double> _products = new Dictionary<string, double>();
 
             public void AddProduct(string name, double quantity)
             {
                 double currentQuantity;
-                if (!_products.TryGetValue(name,out currentQuantity))
+                if (!_products.TryGetValue(name, out currentQuantity))
                 {
                     currentQuantity = 0;
                 }
@@ -274,17 +269,36 @@ namespace E002
                 Console.WriteLine("Shopping Basket said: I added {0} unit(s) of '{1}'", quantity, name);
             }
 
+            private void RemoveProduct(string name, double quantity)
+            {
+                double currentQuantity;
+                if (!_products.TryGetValue(name, out currentQuantity))
+                {
+                    currentQuantity = 0;
+                }
+                _products[name] = quantity - currentQuantity;
+
+                Console.WriteLine("Shopping Basket said: I removed {0} unit(s) of '{1}'", quantity, name);
+            }
+
             public void When(AddProductToBasketMessage toBasketMessage)
             {
                 Console.Write("[Message Applied]: ");
                 AddProduct(toBasketMessage.Name, toBasketMessage.Quantity);
             }
 
+            public void When(RemoveProductFromBasketMessage message)
+            {
+                Console.WriteLine("[Message Applied]: ");
+                RemoveProduct(message.Name, message.Quantity);
+            }
+
             public IDictionary<string, double> GetProductTotals()
             {
                 return _products;
-            } 
+            }
         }
+
         [Serializable]
         public class AddProductToBasketMessage
         {
@@ -300,6 +314,31 @@ namespace E002
             {
                 return string.Format("Add {0} {1} to basket", Quantity, Name);
             }
+        }
+
+        [Serializable]
+        public class RemoveProductFromBasketMessage
+        {
+            public readonly string Name;
+            public readonly double Quantity;
+
+            public RemoveProductFromBasketMessage(string name, double quantity)
+            {
+                Name = name;
+                Quantity = quantity;
+            }
+            public override string ToString()
+            {
+                return string.Format("Remove {0} {1} from basket", Quantity, Name);
+            }
+        }
+    }
+
+    public static class Infrastructure
+    {
+        public static void Apply(this object target, dynamic message)
+        {
+            ((dynamic)target).When(message);
         }
     }
 }
